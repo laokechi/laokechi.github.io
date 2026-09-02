@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Secret Cake Room</title>
+  <style>
+    :root{--bg:#f3f4f6;--card:#ffffff;--accent:#ff6b6b;--muted:#6b7280}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#eef2ff 0%,var(--bg) 100%);display:flex;align-items:center;justify-content:center;padding:24px}
+    .card{background:var(--card);padding:28px;border-radius:12px;box-shadow:0 10px 30px rgba(16,24,40,0.08);width:min(880px,96%);max-width:920px}
+    h1{margin:0 0 8px;font-size:1.6rem}
+    .muted{color:var(--muted);font-size:0.95rem;margin-bottom:12px}
+    /* Lock screen */
+    #lock-screen{display:block}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type="password"]{padding:10px 12px;font-size:1rem;border:1px solid #e5e7eb;border-radius:8px;flex:1}
+    button{background:var(--accent);color:white;border:none;padding:10px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+    button.secondary{background:#e5e7eb;color:#111;font-weight:600}
+    .hint{margin-top:8px;color:#111;background:#f8fafc;padding:8px;border-radius:6px;border:1px dashed #e6e9ef;display:none}
+    /* Main screen */
+    #main-screen{display:none}
+    .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+    .cakes{display:flex;gap:14px;margin-top:18px;flex-wrap:wrap}
+    .cake{width:140px;height:140px;border-radius:12px;background:linear-gradient(180deg,#fff 0,#fff 100%);display:flex;align-items:center;justify-content:center;flex-direction:column;box-shadow:0 6px 18px rgba(2,6,23,0.06);position:relative;cursor:pointer;user-select:none}
+    .cake .emoji{font-size:48px}
+    .cake .bites{position:absolute;top:10px;right:10px;background:#111;color:white;padding:6px 8px;border-radius:999px;font-size:0.9rem}
+    .cake.eaten{transform:scale(.7) rotate(-6deg);opacity:0;transition:opacity .45s, transform .45s}
+    .note{font-size:0.95rem;color:var(--muted)}
+    .bubble-container{position:relative;min-height:60px}
+    /* bubbles */
+    .bubble{position:absolute;left:50%;transform:translateX(-50%);background:#fff;padding:10px 14px;border-radius:20px;box-shadow:0 8px 20px rgba(2,6,23,.08);animation:floatUp 4s forwards;font-weight:600}
+    @keyframes floatUp{0%{opacity:0;transform:translateX(-50%) translateY(10px) scale(.95)}10%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(-120px) scale(.98)}}
+    /* canvas confetti */
+    #confetti-canvas{position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:9999}
+    /* small responsive tweaks */
+    @media (max-width:520px){.cake{width:100px;height:100px}.cake .emoji{font-size:40px}}
+  </style>
+</head>
+<body>
+  <canvas id="confetti-canvas"></canvas>
+  <div class="card" role="main" aria-live="polite">
+    <div id="lock-screen">
+      <h1>Enter password</h1>
+      <div class="muted">This room is secret — type the password below.</div>
+      <div class="row">
+        <input id="password" type="password" autocomplete="off" aria-label="Password input" />
+        <button id="unlock">Go</button>
+        <button id="hintBtn" class="secondary" aria-haspopup="true">Hint</button>
+      </div>
+      <div id="hintText" class="hint" aria-hidden="true">best ship ever</div>
+      <div id="lockMsg" class="note" style="margin-top:10px"></div>
+    </div>
+
+    <div id="main-screen" aria-hidden="true">
+      <h1>Welcome!</h1>
+      <div class="muted">Enjoy the cake room — click cakes to take bites. Use the buttons below.</div>
+
+      <div class="toolbar" style="margin-top:12px">
+        <!-- Replace href with your Pinterest board URL -->
+        <a id="pinterest" class="secondary" href="https://www.pinterest.com/" target="_blank" rel="noopener" style="text-decoration:none;padding:10px 12px;border-radius:8px">Open Pinterest board</a>
+
+        <button id="factBtn" class="secondary">Click for fact</button>
+        <div class="note" style="margin-left:auto">Cakes eaten: <span id="eatenCount">0</span></div>
+      </div>
+
+      <div class="bubble-container" id="bubbles" aria-live="polite" aria-atomic="false"></div>
+
+      <div class="cakes" id="cakes">
+        <!-- We'll generate cakes in JS -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      // Config
+      const CORRECT = 'lyzenu';
+      const sentences = [
+        "i love my bunny",
+        "i wish to punch simeone rightneow.....",
+        "I miss you",
+        "im super cool and u should liek me",
+        "the person who amde htis is so nonchaaltn and handsome",
+        "i love when oomf starts singing random songs stuck in his head"
+      ];
+
+      // Elements
+      const pwInput = document.getElementById('password');
+      const unlockBtn = document.getElementById('unlock');
+      const hintBtn = document.getElementById('hintBtn');
+      const hintText = document.getElementById('hintText');
+      const lockMsg = document.getElementById('lockMsg');
+      const lockScreen = document.getElementById('lock-screen');
+      const mainScreen = document.getElementById('main-screen');
+      const confettiCanvas = document.getElementById('confetti-canvas');
+      const cakesContainer = document.getElementById('cakes');
+      const eatenCountEl = document.getElementById('eatenCount');
+      const factBtn = document.getElementById('factBtn');
+      const bubbles = document.getElementById('bubbles');
+
+      // Hint toggling
+      hintBtn.addEventListener('click', ()=> {
+        if(hintText.style.display === 'block'){ hintText.style.display = 'none'; hintText.setAttribute('aria-hidden','true'); }
+        else { hintText.style.display = 'block'; hintText.setAttribute('aria-hidden','false'); }
+      });
+
+      // Unlock logic
+      unlockBtn.addEventListener('click', tryUnlock);
+      pwInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') tryUnlock(); });
+
+      function tryUnlock(){
+        const val = (pwInput.value || '').trim();
+        if(val.toLowerCase() === CORRECT){
+          lockMsg.textContent = '';
+          unlockSequence();
+        } else {
+          lockMsg.textContent = 'Wrong password — try again.';
+          pwInput.value = '';
+          pwInput.focus();
+        }
+      }
+
+      // Unlock: show confetti + sound then reveal main
+      function unlockSequence(){
+        // play confetti and sound
+        playChime();
+        launchConfetti(1000);
+        // show main after short delay (allow confetti to be visible)
+        setTimeout(()=> {
+          lockScreen.style.display = 'none';
+          mainScreen.style.display = 'block';
+          mainScreen.setAttribute('aria-hidden','false');
+          pwInput.value = '';
+          initCakes(4); // create 4 cakes by default
+        }, 250);
+      }
+
+      // Simple chime using WebAudio (no external file)
+      function playChime(){
+        try{
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const now = ctx.currentTime;
+          const g = ctx.createGain();
+          g.connect(ctx.destination);
+          g.gain.value = 0.0001;
+          // create quick arpeggio
+          const freqs = [880, 1100, 1320];
+          freqs.forEach((f,i)=>{
+            const o = ctx.createOscillator();
+            o.type = 'sine';
+            o.frequency.value = f;
+            o.connect(g);
+            o.start(now + i*0.05);
+            o.stop(now + 0.20 + i*0.05);
+          });
+          // envelope
+          g.gain.setValueAtTime(0.0001, now);
+          g.gain.exponentialRampToValueAtTime(0.25, now+0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, now+0.8);
+        }catch(e){
+          // audio failed (autoplay blocked) - ignore
+        }
+      }
+
+      // Confetti: simple particle system on a full-screen canvas
+      function launchConfetti(durationMs = 1000){
+        const canvas = confettiCanvas;
+        const ctx = canvas.getContext('2d');
+        let w = canvas.width = window.innerWidth;
+        let h = canvas.height = window.innerHeight;
+        const colors = ['#ff6b6b','#f59e0b','#60a5fa','#34d399','#a78bfa'];
+        const particles = [];
+        const num = Math.min(120, Math.floor(w/8));
+        for(let i=0;i<num;i++){
+          particles.push({
+            x: Math.random()*w,
+            y: -20 - Math.random()*h*0.2,
+            vx: (Math.random()-0.5)*6,
+            vy: 2 + Math.random()*6,
+            size: 6 + Math.random()*10,
+            color: colors[Math.floor(Math.random()*colors.length)],
+            rot: Math.random()*360,
+            vr: (Math.random()-0.5)*10
+          });
+        }
+        let start = performance.now();
+        function frame(t){
+          const elapsed = t - start;
+          ctx.clearRect(0,0,w,h);
+          particles.forEach(p=>{
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.06; // gravity
+            p.rot += p.vr;
+            ctx.save();
+            ctx.translate(p.x,p.y);
+            ctx.rotate(p.rot * Math.PI/180);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*0.6);
+            ctx.restore();
+          });
+          if(elapsed < durationMs){
+            requestAnimationFrame(frame);
+          } else {
+            ctx.clearRect(0,0,w,h);
+          }
+        }
+        requestAnimationFrame(frame);
+        // handle resize
+        const onResize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
+        window.addEventListener('resize', onResize, {once:true});
+      }
+
+      // Cakes
+      let eatenCount = 0;
+      function initCakes(count){
+        cakesContainer.innerHTML = '';
+        eatenCount = 0;
+        updateEaten();
+        for(let i=0;i<count;i++){
+          cakesContainer.appendChild(createCakeElement(i));
+        }
+      }
+
+      function createCakeElement(i){
+        const div = document.createElement('div');
+        div.className = 'cake';
+        div.tabIndex = 0;
+        div.setAttribute('role','button');
+        div.setAttribute('aria-label','Cake, three bites');
+        div.dataset.bites = '3';
+        // emoji and label
+        const emoji = document.createElement('div'); emoji.className='emoji'; emoji.textContent = '🎂';
+        const bites = document.createElement('div'); bites.className='bites'; bites.textContent = '3';
+        div.appendChild(emoji); div.appendChild(bites);
+        div.addEventListener('click', ()=>biteCake(div));
+        div.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); biteCake(div); }});
+        return div;
+      }
+
+      function biteCake(el){
+        let b = parseInt(el.dataset.bites || '0', 10);
+        if(b <= 0) return;
+        b -= 1;
+        el.dataset.bites = String(b);
+        const bitesEl = el.querySelector('.bites');
+        bitesEl.textContent = String(b);
+        // small animation to show bite
+        el.animate([{transform:'translateY(0) scale(1)'},{transform:'translateY(-6px) scale(0.98)'},{transform:'translateY(0) scale(1)'}], {duration:220, easing:'ease-out'});
+        // small crunch sound
+        try{
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'triangle';
+          o.frequency.value = 420 + Math.random()*100;
+          g.gain.value = 0.0001;
+          o.start();
+          g.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+          o.stop(ctx.currentTime + 0.2);
+        }catch(e){}
+        if(b === 0){
+          // fully eaten
+          el.classList.add('eaten');
+          setTimeout(()=> el.remove(), 420);
+          eatenCount += 1;
+          updateEaten();
+        }
+      }
+
+      function updateEaten(){ eatenCountEl.textContent = String(eatenCount); }
+
+      // Facts bubbles
+      factBtn.addEventListener('click', spawnFact);
+      function spawnFact(){
+        const txt = sentences[Math.floor(Math.random()*sentences.length)];
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        bubble.textContent = txt;
+        // random horizontal offset within container
+        const w = bubbles.clientWidth || 600;
+        const leftPercent = 10 + Math.random()*80;
+        bubble.style.left = leftPercent + '%';
+        bubble.style.bottom = '8px';
+        bubbles.appendChild(bubble);
+        // remove after animation finishes
+        setTimeout(()=> bubble.remove(), 4200);
+      }
+
+      // Accessibility: focus password on load
+      pwInput.focus();
+
+    })();
+  </script>
+</body>
+</html>
